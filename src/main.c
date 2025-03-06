@@ -3,8 +3,7 @@
 
 int main(int argc, char** argv) {
 
-    // print_sth();
-    read_sock();
+    worker();
 
     return 0;
 }

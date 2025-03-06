@@ -1,48 +1,74 @@
-// raw_sock from google
-#include<stdio.h>
-#include<stdlib.h>
-#include<string.h>
-#include<netinet/ip.h>
-#include<sys/socket.h>
-#include<arpa/inet.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+// #include <netinet/ip_icmp.h>
+// #include <time.h>
+// #include <fcntl.h>
+// #include <signal.h>
 
-int read_sock() {
-    // Structs that contain source IP addresses
-    struct sockaddr_in source_socket_address, dest_socket_address;
+#define custom_FQDN "google.com"
 
-    int packet_size;
+#define MY_NI_MAXHOST   1025
+#define MY_NI_NAMEREQD  8
+#define PORT_NO 0
 
-    // Allocate string buffer to hold incoming packet data
-    unsigned char *buffer = (unsigned char *)malloc(65536);
-    // Open the raw socket
-    int sock = socket (PF_INET, SOCK_RAW, IPPROTO_TCP);
-    if(sock == -1)
-    {
-        //socket creation failed, may be because of non-root privileges
-        perror("Failed to create socket");
-        exit(1);
+char *dns_lookup(char *addr_host, struct sockaddr_in *addr_con) {
+    struct hostent *host_entity;
+    char *ip = (char *)malloc(MY_NI_MAXHOST * sizeof(char));
+    if (!(host_entity = gethostbyname(addr_host)))
+        return NULL;
+    
+    strcpy(ip, inet_ntoa(*(struct in_addr *)host_entity->h_addr_list[0]));
+    addr_con->sin_family = host_entity->h_addrtype;
+    addr_con->sin_port = htons(PORT_NO);
+    addr_con->sin_addr.s_addr = *(long *)host_entity->h_addr_list[0];
+
+    return ip;
+}
+
+char *reverse_dns_lookup(char *target_ip_addr) {
+    struct sockaddr_in temp_addr;
+    socklen_t len;
+    char buf[MY_NI_MAXHOST], *ret_buf;
+
+    temp_addr.sin_family = AF_INET;
+    temp_addr.sin_addr.s_addr = inet_addr(target_ip_addr);
+    len = sizeof(struct sockaddr_in);
+
+    if (getnameinfo((struct sockaddr *)&temp_addr, len, buf, sizeof(buf), NULL, 0, MY_NI_NAMEREQD)) {
+        printf("Could not resolve reverse lookup of hostname\n");
+        return NULL;
     }
-    while(1) {
-      // recvfrom is used to read data from a socket
-      packet_size = recvfrom(sock , buffer , 65536 , 0 , NULL, NULL);
-      if (packet_size == -1) {
-        printf("Failed to get packets\n");
-        return 1;
-      }
 
-      struct iphdr *ip_packet = (struct iphdr *)buffer;
+    ret_buf = (char *)malloc((strlen(buf)+1) * sizeof(char));
+    strcpy(ret_buf, buf);
+    return ret_buf;
+}
 
-      memset(&source_socket_address, 0, sizeof(source_socket_address));
-      source_socket_address.sin_addr.s_addr = ip_packet->saddr;
-      memset(&dest_socket_address, 0, sizeof(dest_socket_address));
-      dest_socket_address.sin_addr.s_addr = ip_packet->daddr;
+int worker() {
 
-      printf("Incoming Packet: \n");
-      printf("Packet Size (bytes): %d\n",ntohs(ip_packet->tot_len));
-      printf("Source Address: %s\n", (char *)inet_ntoa(source_socket_address.sin_addr));
-      printf("Destination Address: %s\n", (char *)inet_ntoa(dest_socket_address.sin_addr));
-      printf("Identification: %d\n\n", ntohs(ip_packet->id));
+    int sockfd;
+    char *target_ip_addr, *reverse_hostname;
+    struct sockaddr_in addr_con;
+    int addrlen = sizeof(addr_con);
+    // char netbuff[MY_NI_MAXHOST];
+
+    target_ip_addr = dns_lookup(custom_FQDN, &addr_con);
+    if (target_ip_addr == NULL) {
+        printf("dns_lookup failed, couldn't resolve %s address\n", custom_FQDN);
+        return 0;
     }
+
+    reverse_hostname = reverse_dns_lookup(target_ip_addr);
+    printf("Target ip: %s, reverse lookup domain: %s\n", target_ip_addr, reverse_hostname);
+
+    printf("gg\n");
 
     return 1;
 }
