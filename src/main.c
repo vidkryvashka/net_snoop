@@ -3,7 +3,7 @@
 
 int main(int argc, char** argv) {
 
-    worker();
+    organize();
 
     return 0;
 }
