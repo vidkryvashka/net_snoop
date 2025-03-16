@@ -12,15 +12,14 @@
 #include <time.h>
 #include <sys/time.h>    // idk why, without it struct timeval glows red in vs code (inclomplete type) but works
 // #include <fcntl.h>
-// #include <signal.h>
+// #include <signal.h>  // for capturing ^C
 
-// #define CUSTOM_FQDN "google.com"
-#define CUSTOM_FQDN "google.com"
+#include "defs.h"
+
 #define CUSTOM_MAX_HOP 32
-// #define CUSTOM_FQDN "localhost"
 
-#define MY_NI_MAXHOST   1025    // NI_MAXHOST from <netdb.h>, errorlesly glows in vs code
-#define MY_NI_NAMEREQD  8       // NI_NAMEREQD from <netdb.h>, too
+// #define MY_NI_MAXHOST   1025    // NI_MAXHOST from <netdb.h>, errorlesly glows in vs code
+// #define MY_NI_NAMEREQD  8       // NI_NAMEREQD from <netdb.h>, too
 #define PORT_NUM 0
 #define TX_PACKET_SIZE 64
 #define RECV_TIMEOUT 1          // timeout for receiving packets (in seconds)
@@ -31,7 +30,7 @@ struct packet_t {
 };
 
 
-static char *dns_lookup(const char *addr_host, struct sockaddr_in *addr_con, char *target_ip_addr) {
+static int dns_lookup(const char *addr_host, struct sockaddr_in *addr_con, char *target_ip_addr) {
     struct hostent *host_entity;
     if (!(host_entity = gethostbyname(addr_host)))
         return 0;
@@ -54,7 +53,7 @@ static int reverse_dns_lookup(const char *target_ip_addr, char *dest) {
     temp_addr.sin_addr.s_addr = inet_addr(target_ip_addr);
 
     if (getnameinfo((struct sockaddr *)&temp_addr, sizeof(struct sockaddr_in), buff, sizeof(buff), NULL, 0, MY_NI_NAMEREQD)) {
-        strcpy(dest, ".");
+        strcpy(dest, "-");
         return 0;
     }
     strcpy(dest, buff);
@@ -105,8 +104,10 @@ static int process_resp(char *rx_buff, int msg_sent, int ttl_binded) {
             
         if (rx_icmp_hdr->type == 11)
             return 11;
+        else
+            printf("reached\n");
     } else {
-        printf("Error: responce icmp type %zu", rx_icmp_hdr->type);
+        printf("Error: responce icmp type %d\n", rx_icmp_hdr->type);
         return 0;
     }
     return 1;
@@ -118,7 +119,8 @@ static void fist_network(
         const struct sockaddr_in *target_addr,
         const char *rev_host,
         const char *target_ip,
-        const char *target_fqdn
+        const char *target_fqdn,
+        const uint8_t max_hops
     ) {
 
     struct timeval tv_out = {
@@ -139,41 +141,43 @@ move_deeper:
 
     prepare_tx_pkt(&tx_pkt, msg_sent);
     
-    if (sendto(
+    ssize_t err_sendto = sendto(
         sockfd,
         &tx_pkt,
         sizeof(tx_pkt),
         0,
         (struct sockaddr *)target_addr,
         sizeof(*target_addr)
-    ) <= 0) {
-        printf("Error: packet sending failed\n");
+    );
+    if (err_sendto <= 0) {
+        printf("Error: packet sending failed, sendto error %ld\n", err_sendto);
         is_pack_sent = 0;
-    };
-    ++ msg_sent;
+    } else
+        ++ msg_sent;
 
     struct sockaddr_in rx_addr;
     uint8_t rx_addr_len = sizeof(rx_addr);
-    char rx_buff[128];  // big ugly fat fuck
-    if (recvfrom(
+    char rx_buff[128];
+    ssize_t err_recvfrom = recvfrom(
         sockfd,
         rx_buff,
         sizeof(rx_buff),
         0,
         (struct sockaddr *)&rx_addr,
         (socklen_t *)&rx_addr_len
-    ) <= 0) {
-        printf("Error: packet receive failed\n");
+    );
+    if (err_recvfrom <= 0) {
+        printf("Error: packet receive failed, recvfrom error %ld\n", err_recvfrom);
     } else {
         if (is_pack_sent) {
-            if (process_resp(rx_buff, msg_sent, ttl_binded) == 11)
+            if (process_resp(rx_buff, msg_sent, ttl_binded) == 11 && msg_sent < max_hops)
                 goto move_deeper;
         }
     }
 }   // static void fist_network
 
 
-int organize() {
+int organize(const config_t *conf) {
 
     int sockfd;
     char target_ip_addr[MY_NI_MAXHOST];
@@ -182,14 +186,14 @@ int organize() {
     int addr_len = sizeof(addr_con);
 
     
-    if (!dns_lookup(CUSTOM_FQDN, &addr_con, target_ip_addr)) {
-        printf("Error: dns_lookup failed, couldn't resolve %s address\n", CUSTOM_FQDN);
+    if (!dns_lookup(conf->target_fqdn, &addr_con, target_ip_addr)) {
+        printf("Error: dns_lookup failed, couldn't resolve %s address\n", conf->target_fqdn);
         return 0;
     }
 
     reverse_dns_lookup(target_ip_addr, reverse_hostname);
 
-    printf("Target ip: %s, reverse lookup domain: %s\n", target_ip_addr, reverse_hostname);
+    printf("Target hostname: %s, ip: %s, max-hops %d\n", conf->target_fqdn, target_ip_addr, conf->max_hops);
 
 
     sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
@@ -198,9 +202,7 @@ int organize() {
         return 0;
     }
 
-    fist_network(sockfd, &addr_con, reverse_hostname, target_ip_addr, CUSTOM_FQDN);
-
-    printf("end program\n");
+    fist_network(sockfd, &addr_con, reverse_hostname, target_ip_addr, conf->target_fqdn, conf->max_hops);
 
     return 1;
 }

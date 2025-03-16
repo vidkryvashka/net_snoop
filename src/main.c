@@ -1,9 +1,18 @@
 #include "defs.h"
-#include "sock_things.h"
+
+
+#include <stdio.h>
+#include <unistd.h>
+
+
 
 int main(int argc, char** argv) {
 
-    organize();
+    config_t conf;
 
+    if (!choose_options(argc, argv, &conf))
+        organize((const config_t *)&conf);
+
+    printf("end program\n");
     return 0;
 }

@@ -1,1 +1,7 @@
-зроби щоб достукувалось до сайту й читало відповідь
+зробити рахунок часу до кожного вузла
+
+зробити вибір інтерфейсу
+
+
+
+to be in commit -m "implemented good getopt, config choosing, max hops parametring, refactored. sock stuff penetrates to google, but not every time to other websites"
