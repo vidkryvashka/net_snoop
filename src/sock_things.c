@@ -133,7 +133,9 @@ static void fist_network(
     struct packet_t tx_pkt;
     
 move_deeper:
-    ttl_binded += msg_sent + 1;
+    ++ msg_sent;
+    ttl_binded = msg_sent;
+    // ttl_binded += msg_sent + 1;
     if (setsockopt(sockfd, SOL_IP, IP_TTL, &ttl_binded, sizeof(ttl_binded))) {
         printf("Error: setting socket options to TTL failed\n");
         return;
@@ -152,8 +154,8 @@ move_deeper:
     if (err_sendto <= 0) {
         printf("Error: packet sending failed, sendto error %ld\n", err_sendto);
         is_pack_sent = 0;
-    } else
-        ++ msg_sent;
+    } //else
+      //  ++ msg_sent;
 
     struct sockaddr_in rx_addr;
     uint8_t rx_addr_len = sizeof(rx_addr);
@@ -167,7 +169,8 @@ move_deeper:
         (socklen_t *)&rx_addr_len
     );
     if (err_recvfrom <= 0) {
-        printf("Error: packet receive failed, recvfrom error %ld\n", err_recvfrom);
+        printf("%d\t* * *\trecvfrom = %ld\tnode refuses to echo\n", msg_sent, err_recvfrom);
+        goto move_deeper;
     } else {
         if (is_pack_sent) {
             if (process_resp(rx_buff, msg_sent, ttl_binded) == 11 && msg_sent < max_hops)
