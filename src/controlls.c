@@ -9,7 +9,7 @@
 static void print_help() {
     printf("\n\
     needs to be running with root\n\n\
-    ./path-2-program <char *fqdn> \t\tsame as with -d --destination \tdefault %s\n\
+    ./path2program <char *fqdn> \t\tsame as with -d --destination \tdefault %s\n\
     -d --destination <char *fqdn>\t\tspecify destination FQDN\n\
     -h --max-hops <uint8_t hops>\t\tspecify max hop (ttl) count, \tdefault %d\n\
     -i --interface <optional char *interface>\tallows to choose interface, not implemented\n\

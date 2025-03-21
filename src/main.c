@@ -13,6 +13,6 @@ int main(int argc, char** argv) {
     if (!choose_options(argc, argv, &conf))
         organize((const config_t *)&conf);
 
-    printf("end program\n");
+    // printf("end program\n");
     return 0;
 }

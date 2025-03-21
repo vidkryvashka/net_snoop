@@ -53,7 +53,7 @@ static int reverse_dns_lookup(const char *target_ip_addr, char *dest) {
     temp_addr.sin_addr.s_addr = inet_addr(target_ip_addr);
 
     if (getnameinfo((struct sockaddr *)&temp_addr, sizeof(struct sockaddr_in), buff, sizeof(buff), NULL, 0, MY_NI_NAMEREQD)) {
-        strcpy(dest, "-");
+        strcpy(dest, "-\t");
         return 0;
     }
     strcpy(dest, buff);
@@ -87,7 +87,7 @@ static void prepare_tx_pkt(struct packet_t *tx_pkt, int msg_sent) {
 }
 
 
-static int process_resp(char *rx_buff, int msg_sent, int ttl_binded) {
+static int process_resp(char *rx_buff, int msg_sent, int ttl_binded, float time_taken_ms) {
 
     struct iphdr *ip_hdr = (struct iphdr *)rx_buff;
     struct icmphdr *rx_icmp_hdr = (struct icmphdr *)(rx_buff + ip_hdr->ihl * 4);
@@ -99,13 +99,14 @@ static int process_resp(char *rx_buff, int msg_sent, int ttl_binded) {
         printf("%d\t", msg_sent);
         snprintf(ip_addr, 16, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
         reverse_dns_lookup(ip_addr, reverse_hostname);
-        printf("%s\t%s\n",
-            ip_addr, reverse_hostname);
+        printf("%s\t%s\t%.3f ms",
+            ip_addr, reverse_hostname, time_taken_ms);
             
-        if (rx_icmp_hdr->type == 11)
+        if (rx_icmp_hdr->type == 11) {
+            printf("\n");
             return 11;
-        else
-            printf("reached\n");
+        } else
+            printf("\treached\n");
     } else {
         printf("Error: responce icmp type %d\n", rx_icmp_hdr->type);
         return 0;
@@ -130,6 +131,7 @@ static void fist_network(
     setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv_out, sizeof(tv_out));
     
     int is_pack_sent = 1, msg_sent = 0, ttl_binded = 0;
+    clock_t t, end;
     struct packet_t tx_pkt;
     
 move_deeper:
@@ -142,7 +144,7 @@ move_deeper:
     }
 
     prepare_tx_pkt(&tx_pkt, msg_sent);
-    
+    t = clock();
     ssize_t err_sendto = sendto(
         sockfd,
         &tx_pkt,
@@ -153,9 +155,8 @@ move_deeper:
     );
     if (err_sendto <= 0) {
         printf("Error: packet sending failed, sendto error %ld\n", err_sendto);
-        is_pack_sent = 0;
-    } //else
-      //  ++ msg_sent;
+        return;
+    }
 
     struct sockaddr_in rx_addr;
     uint8_t rx_addr_len = sizeof(rx_addr);
@@ -168,15 +169,13 @@ move_deeper:
         (struct sockaddr *)&rx_addr,
         (socklen_t *)&rx_addr_len
     );
+    t = clock() - t;
+    float time_taken_ms = (float)t*1000 / CLOCKS_PER_SEC;
     if (err_recvfrom <= 0) {
-        printf("%d\t* * *\trecvfrom = %ld\tnode refuses to echo\n", msg_sent, err_recvfrom);
+        printf("%d\t* * *\trecvfrom = %ld\tnode refused to echo\n", msg_sent, err_recvfrom);
         goto move_deeper;
-    } else {
-        if (is_pack_sent) {
-            if (process_resp(rx_buff, msg_sent, ttl_binded) == 11 && msg_sent < max_hops)
-                goto move_deeper;
-        }
-    }
+    } else if (process_resp(rx_buff, msg_sent, ttl_binded, time_taken_ms) == 11 && msg_sent < max_hops)
+        goto move_deeper;
 }   // static void fist_network
 
 
