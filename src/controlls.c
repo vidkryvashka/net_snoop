@@ -144,5 +144,5 @@ int choose_options(int argc, char **argv, config_t *conf) {
     if (!conf->target_fqdn[0])
         strcpy(conf->target_fqdn, DEFAULT_FQDN);
 
-    return 0;
+    return 1;   // good
 }

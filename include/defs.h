@@ -7,7 +7,6 @@
 #define DEFAULT_FQDN        "rhodesia.me.uk"
 #define DEFAULT_MAX_HOPS    32
 #define INTERFACE_LENGTH    16
-// #define DEFAULT_INTERFACE   "enp0s1"
 
 typedef struct {
     char target_fqdn[MY_NI_MAXHOST];
@@ -18,4 +17,10 @@ typedef struct {
 
 int choose_options(int argc, char** argv, config_t *conf);
 
+/**
+ * @brief organizes sock knocking
+ * 
+ * @param conf config structure, not necessary, has default values
+ * @return int error not implemented
+ */
 int organize(const config_t *conf);

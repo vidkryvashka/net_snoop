@@ -64,17 +64,17 @@ static int reverse_dns_lookup(const char *target_ip_addr, char *dest) {
 }
 
 
-static int bind_interface(const int sockfd, const char *iface_name) {
+// static int bind_interface(const int sockfd, const char *iface_name) {
 
-    const int len = strlen(iface_name);
-    if (len >= INTERFACE_LENGTH) {
-        fprintf(stderr, "Too long interface name");
-        return 1;
-    }
-    setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, iface_name, len);
+//     const int len = strlen(iface_name);
+//     if (len >= INTERFACE_LENGTH) {
+//         fprintf(stderr, "Too long interface name");
+//         return 1;
+//     }
+//     setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, iface_name, len);
 
-    return 1;
-}
+//     return 1;
+// }
 
 
 static uint16_t checksum(const struct packet_t *tx_pkt, int len) {
@@ -104,7 +104,7 @@ static void prepare_tx_pkt(struct packet_t *tx_pkt, int msg_sent) {
 }
 
 
-static int process_resp(char *rx_buff, int msg_sent, int ttl_binded, float time_taken_ms) {
+static int process_resp(char *rx_buff, int msg_sent, float time_taken_ms) {
 
     struct iphdr *ip_hdr = (struct iphdr *)rx_buff;
     struct icmphdr *rx_icmp_hdr = (struct icmphdr *)(rx_buff + ip_hdr->ihl * 4);
@@ -134,40 +134,20 @@ static int process_resp(char *rx_buff, int msg_sent, int ttl_binded, float time_
             printf("Error: responce icmp type %d\n", rx_icmp_hdr->type);
             return 0;
     }
-    return 1;
+    return 1;   // good
 }
 
 
-static void fist_network(
+static int send_receive(
         const int sockfd,
         const struct sockaddr_in *target_addr,
-        const char *rev_host,
-        const char *target_ip,
+        int msg_sent,
         const config_t *conf
     ) {
 
-    if (conf->interface[0])
-        bind_interface(sockfd, conf->interface);
-
-    struct timeval tv_out = {
-        .tv_sec = RECV_TIMEOUT,
-        .tv_usec = 0
-    };
-    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv_out, sizeof(tv_out));
-    int msg_sent = 0, ttl_binded = 0;
-    clock_t t;
-    
-move_deeper:
-    ++ msg_sent;
-    ttl_binded = msg_sent;
-    if (setsockopt(sockfd, SOL_IP, IP_TTL, &ttl_binded, sizeof(ttl_binded))) {
-        printf("Error: setting socket options to TTL failed\n");
-        return;
-    }
-    
     struct packet_t tx_pkt;
     prepare_tx_pkt(&tx_pkt, msg_sent);
-    t = clock();
+    clock_t t = clock();
     ssize_t err_sendto = sendto(
         sockfd,
         &tx_pkt,
@@ -178,7 +158,7 @@ move_deeper:
     );
     if (err_sendto <= 0) {
         printf("Error: packet sending failed, sendto error %ld\n", err_sendto);
-        return;
+        return -1;
     }
 
     struct sockaddr_in rx_addr;
@@ -196,14 +176,42 @@ move_deeper:
     float time_taken_ms = (float)t*1000 / CLOCKS_PER_SEC;
     if (err_recvfrom <= 0) {
         printf("%d\t* * *\trecvfrom = %ld\tnode refused to echo\n", msg_sent, err_recvfrom);
+        return 11;
+    } else if (process_resp(rx_buff, msg_sent, time_taken_ms) == 11 && msg_sent < conf->max_hops)
+        return 11;
+    return 1;   // good
+}
+
+
+static void fist_network(
+        const int sockfd,
+        const struct sockaddr_in *target_addr,
+        const char *rev_host,
+        const char *target_ip,
+        const config_t *conf
+    ) {
+
+    if (conf->interface[0])
+        setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, conf->interface, INTERFACE_LENGTH);
+
+    struct timeval tv_out = {
+        .tv_sec = RECV_TIMEOUT,
+        .tv_usec = 0
+    };
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv_out, sizeof(tv_out));
+    int msg_sent = 0, ttl_binded = 0;
+    
+move_deeper:
+    ++ msg_sent;
+    ttl_binded = msg_sent;
+    if (setsockopt(sockfd, SOL_IP, IP_TTL, &ttl_binded, sizeof(ttl_binded))) {
+        printf("Error: setting socket options to TTL failed\n");
+        return;
+    }
+    if (send_receive(sockfd, target_addr, msg_sent, conf) == 11)
         goto move_deeper;
-    } else if (process_resp(rx_buff, msg_sent, ttl_binded, time_taken_ms) == 11 && msg_sent < conf->max_hops)
-        goto move_deeper;
+
 }   // static void fist_network
-
-
-
-
 
 
 
