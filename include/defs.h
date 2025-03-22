@@ -4,7 +4,7 @@
 #define MY_NI_NAMEREQD  8       // NI_NAMEREQD from <netdb.h>, too
 
 
-#define DEFAULT_FQDN        "church.ua" // bo hrestyly v sykhivskiy pravoslavniy cerkvi
+#define DEFAULT_FQDN        "rhodesia.me.uk"
 #define DEFAULT_INTERFACE   "enp0s1"
 #define DEFAULT_MAX_HOPS    32
 
