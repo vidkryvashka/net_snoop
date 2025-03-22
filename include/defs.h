@@ -4,14 +4,15 @@
 #define MY_NI_NAMEREQD  8       // NI_NAMEREQD from <netdb.h>, too
 
 
-#define DEFAULT_FQDN        "church.ua" // bo hrestyly v sykhivskiy pravoslavniy cerkvi
-#define DEFAULT_INTERFACE   "enp0s1"
+#define DEFAULT_FQDN        "rhodesia.me.uk"
 #define DEFAULT_MAX_HOPS    32
+#define INTERFACE_LENGTH    16
+// #define DEFAULT_INTERFACE   "enp0s1"
 
 typedef struct {
     char target_fqdn[MY_NI_MAXHOST];
-    char interface[32];
     uint8_t max_hops;
+    char interface[INTERFACE_LENGTH];
 } config_t;
 
 

@@ -5,6 +5,7 @@
 #include <getopt.h>
 #include <string.h> // bzero
 #include <stdlib.h>
+#include <ifaddrs.h>
 
 static void print_help() {
     printf("\n\
@@ -16,6 +17,65 @@ static void print_help() {
     --help\n\n",
     DEFAULT_FQDN, DEFAULT_MAX_HOPS);
 }
+
+
+static int choose_interface(char *iface_name_arg, char *iface2write) {
+    struct ifaddrs *addrs, *tmp;
+
+    getifaddrs(&addrs);
+    tmp = addrs;
+
+    if (iface_name_arg) {
+        int is_iface_available = 0;
+        while (tmp) {
+            if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_PACKET && !strcmp(iface_name_arg, tmp->ifa_name)) {
+                printf("interface %s available\n", tmp->ifa_name);
+                is_iface_available = 1;
+                strcpy(iface2write, iface_name_arg);
+                freeifaddrs(addrs);
+                return 1;
+            }
+            tmp = tmp->ifa_next;
+        }
+        if (!is_iface_available) {
+            printf("\tlooks like you specified wrong interface %s\n", iface_name_arg);
+            tmp = addrs;
+        }
+    }
+
+    uint8_t index2choose, count_ifaces = 0;
+    printf("available interfaces: \n");
+    while (tmp) {
+        if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_PACKET) {
+            printf("\t%d) %s\n", count_ifaces, tmp->ifa_name);
+            ++ count_ifaces;
+        }
+        tmp = tmp->ifa_next;
+    }
+choose_again:
+    printf("type index of interface: ");
+    scanf("%hhd", &index2choose);
+
+    if (index2choose == 0 || (index2choose && index2choose > 0 && index2choose < count_ifaces)) {
+        tmp = addrs;
+        for (uint8_t i; tmp && i < index2choose;) {
+            if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_PACKET)
+                ++i;
+            tmp = tmp->ifa_next;
+        }
+        if (strlen(tmp->ifa_name) < INTERFACE_LENGTH)
+            strcpy(iface2write, tmp->ifa_name);
+        else
+            printf("couldn't write interface name");
+    } else {
+        printf("\twrong choise\n");
+        goto choose_again;
+    }
+
+    freeifaddrs(addrs);
+    return 1;
+}
+
 
 int choose_options(int argc, char **argv, config_t *conf) {
     if (argc == 1) {
@@ -38,7 +98,7 @@ int choose_options(int argc, char **argv, config_t *conf) {
     };
 
     int opt, longindex;
-    char shortopts[] = ":d:hi";
+    char shortopts[] = ":d:hi::";
     while ((opt = getopt_long(
         argc,
         argv,
@@ -55,13 +115,14 @@ int choose_options(int argc, char **argv, config_t *conf) {
                 print_help();
                 return -1;
             case 'i':
-                    printf("choosing interface feature not implemented, arg: %s\n", optarg);
+                if (optarg == NULL && optind < argc && argv[optind][0] != '-')
+                    optarg = argv[optind++];
+                choose_interface(optarg, conf->interface);
+                // printf("result iface %s\n", conf->interface);
                 break;
             case 0:
-                if (!strncmp(longopts[longindex].name, "max-hops", 8)) {
+                if (!strncmp(longopts[longindex].name, "max-hops", 8))
                     conf->max_hops = (uint8_t)strtoul(optarg, (char **)NULL, 10);
-                    printf("max hops %s\n", optarg);
-                }
                 break;
             case ':':
                 printf("option -%c needs a value\n", optopt);
@@ -69,10 +130,11 @@ int choose_options(int argc, char **argv, config_t *conf) {
             case '?':
                 printf("unknown option: %c\n", optopt);
                 break;
+            default:
+                printf("choose_options case default\n");
         }
     }
 
-    // printf("unknown args diff: %d %d\n", optind, argc);
     if (argc - optind > 1) {
         printf("\nwhy so many unknown args\n");
         print_help();
