@@ -3,26 +3,28 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
+#include <netinet/ether.h>
 #include <netinet/ip_icmp.h>
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <time.h>
-#include <sys/time.h>    // idk why, without it struct timeval glows red in vs code (inclomplete type) but works
-// #include <fcntl.h>
+// #include <sys/time.h>    // idk why, without it struct timeval glows red in vs code (inclomplete type) but works
+#include <linux/if_packet.h>
 // #include <signal.h>  // for capturing ^C
 
 #include "defs.h"
 
 #define CUSTOM_MAX_HOP 32
 
-// #define MY_NI_MAXHOST   1025    // NI_MAXHOST from <netdb.h>, errorlesly glows in vs code
-// #define MY_NI_NAMEREQD  8       // NI_NAMEREQD from <netdb.h>, too
 #define PORT_NUM 0
 #define TX_PACKET_SIZE 64
 #define RECV_TIMEOUT 1          // timeout for receiving packets (in seconds)
+
 
 struct packet_t {
     struct icmphdr icmp_hdr;
@@ -44,6 +46,7 @@ static int dns_lookup(const char *addr_host, struct sockaddr_in *addr_con, char 
     return 1;
 }
 
+
 static int reverse_dns_lookup(const char *target_ip_addr, char *dest) {
     struct sockaddr_in temp_addr;
     socklen_t len;
@@ -61,6 +64,19 @@ static int reverse_dns_lookup(const char *target_ip_addr, char *dest) {
 }
 
 
+static int bind_interface(const int sockfd, const char *iface_name) {
+
+    const int len = strlen(iface_name);
+    if (len >= INTERFACE_LENGTH) {
+        fprintf(stderr, "Too long interface name");
+        return 1;
+    }
+    setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, iface_name, len);
+
+    return 1;
+}
+
+
 static uint16_t checksum(const struct packet_t *tx_pkt, int len) {
     uint16_t *buff = (uint16_t *)tx_pkt;
     uint32_t sum = 0;
@@ -74,6 +90,7 @@ static uint16_t checksum(const struct packet_t *tx_pkt, int len) {
     res = ~sum;
     return res;
 }
+
 
 static void prepare_tx_pkt(struct packet_t *tx_pkt, int msg_sent) {
     bzero(tx_pkt, sizeof(*tx_pkt));
@@ -95,21 +112,27 @@ static int process_resp(char *rx_buff, int msg_sent, int ttl_binded, float time_
     char reverse_hostname[MY_NI_MAXHOST+1];
     unsigned char *ip = (unsigned char *)&ip_hdr->saddr;
     
-    if ( !(rx_icmp_hdr->type % 11)) {
-        printf("%d\t", msg_sent);
-        snprintf(ip_addr, 16, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-        reverse_dns_lookup(ip_addr, reverse_hostname);
-        printf("%s\t%s\t%.3f ms",
-            ip_addr, reverse_hostname, time_taken_ms);
-            
-        if (rx_icmp_hdr->type == 11) {
-            printf("\n");
-            return 11;
-        } else
-            printf("\treached\n");
-    } else {
-        printf("Error: responce icmp type %d\n", rx_icmp_hdr->type);
-        return 0;
+    switch (rx_icmp_hdr->type) {
+        case 0:
+        case 11:
+            printf("%d\t", msg_sent);
+            snprintf(ip_addr, 16, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+            reverse_dns_lookup(ip_addr, reverse_hostname);
+            printf("%s\t%s\t%.3f ms",
+                ip_addr, reverse_hostname, time_taken_ms);
+
+            if (rx_icmp_hdr->type == 11) {
+                printf("\n");
+                return 11;
+            } else
+                printf("\treached\n");
+            break;
+        case 8:
+            printf("Error: responce icmp type %d loopback, switch interface\n", rx_icmp_hdr->type);
+            break;
+        default:
+            printf("Error: responce icmp type %d\n", rx_icmp_hdr->type);
+            return 0;
     }
     return 1;
 }
@@ -120,29 +143,29 @@ static void fist_network(
         const struct sockaddr_in *target_addr,
         const char *rev_host,
         const char *target_ip,
-        const char *target_fqdn,
-        const uint8_t max_hops
+        const config_t *conf
     ) {
+
+    if (conf->interface[0])
+        bind_interface(sockfd, conf->interface);
 
     struct timeval tv_out = {
         .tv_sec = RECV_TIMEOUT,
         .tv_usec = 0
     };
     setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv_out, sizeof(tv_out));
-    
-    int is_pack_sent = 1, msg_sent = 0, ttl_binded = 0;
-    clock_t t, end;
-    struct packet_t tx_pkt;
+    int msg_sent = 0, ttl_binded = 0;
+    clock_t t;
     
 move_deeper:
     ++ msg_sent;
     ttl_binded = msg_sent;
-    // ttl_binded += msg_sent + 1;
     if (setsockopt(sockfd, SOL_IP, IP_TTL, &ttl_binded, sizeof(ttl_binded))) {
         printf("Error: setting socket options to TTL failed\n");
         return;
     }
-
+    
+    struct packet_t tx_pkt;
     prepare_tx_pkt(&tx_pkt, msg_sent);
     t = clock();
     ssize_t err_sendto = sendto(
@@ -174,7 +197,7 @@ move_deeper:
     if (err_recvfrom <= 0) {
         printf("%d\t* * *\trecvfrom = %ld\tnode refused to echo\n", msg_sent, err_recvfrom);
         goto move_deeper;
-    } else if (process_resp(rx_buff, msg_sent, ttl_binded, time_taken_ms) == 11 && msg_sent < max_hops)
+    } else if (process_resp(rx_buff, msg_sent, ttl_binded, time_taken_ms) == 11 && msg_sent < conf->max_hops)
         goto move_deeper;
 }   // static void fist_network
 
@@ -200,7 +223,11 @@ int organize(const config_t *conf) {
 
     reverse_dns_lookup(target_ip_addr, reverse_hostname);
 
-    printf("Target hostname: %s, ip: %s, max-hops %d\n", conf->target_fqdn, target_ip_addr, conf->max_hops);
+    printf("Target hostname: %s, ip: %s, max-hops %d%s %s\n",
+            conf->target_fqdn, target_ip_addr, conf->max_hops,
+            (conf->interface[0]) ? ", interface" : "",
+            (conf->interface[0]) ? conf->interface : ""
+        );
 
 
     sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
@@ -209,7 +236,7 @@ int organize(const config_t *conf) {
         return 0;
     }
 
-    fist_network(sockfd, &addr_con, reverse_hostname, target_ip_addr, conf->target_fqdn, conf->max_hops);
+    fist_network(sockfd, &addr_con, reverse_hostname, target_ip_addr, conf);
 
     return 1;
 }
