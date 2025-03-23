@@ -21,7 +21,7 @@
 
 #define CUSTOM_MAX_HOP 32
 
-#define PORT_NUM 0
+#define PORT_NUM 80
 #define TX_PACKET_SIZE 64
 #define RECV_TIMEOUT 1          // timeout for receiving packets (in seconds)
 
@@ -62,19 +62,6 @@ static int reverse_dns_lookup(const char *target_ip_addr, char *dest) {
     strcpy(dest, buff);
     return 1;
 }
-
-
-// static int bind_interface(const int sockfd, const char *iface_name) {
-
-//     const int len = strlen(iface_name);
-//     if (len >= INTERFACE_LENGTH) {
-//         fprintf(stderr, "Too long interface name");
-//         return 1;
-//     }
-//     setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, iface_name, len);
-
-//     return 1;
-// }
 
 
 static uint16_t checksum(const struct packet_t *tx_pkt, int len) {
@@ -127,8 +114,11 @@ static int process_resp(char *rx_buff, int msg_sent, float time_taken_ms) {
             } else
                 printf("\treached\n");
             break;
-        case 8:
-            printf("Error: responce icmp type %d loopback, switch interface\n", rx_icmp_hdr->type);
+	case 3:
+	    printf("Error: responce icmp type 3, port unreachable\n");
+	    break;
+	case 8:
+            printf("Error: responce icmp type 8 loopback, switch interface\n");
             break;
         default:
             printf("Error: responce icmp type %d\n", rx_icmp_hdr->type);

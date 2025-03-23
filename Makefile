@@ -1,37 +1,36 @@
-CC = gcc
-CFLAGS = -Wall -Wno-unused-variable -Wno-unused-function -Wno-main -Iinclude
-SRC_DIR = ./src
-OBJ_DIR = ./obj
-BIN_DIR = ./bin
-INCLUDE_DIR = ./include
-TARGET = $(BIN_DIR)/program
+# CC = aarch64-openwrt-linux-musl-gcc # gcc
+LOCAL_FLAGS = -Wall -Wno-unused-variable -Wno-unused-function -Wno-main -Iinclude
+SRC_LOCAL_NS_DIR = ./src
+OBJ_LOCAL_NS_DIR = ./obj
+BIN_LOCAL_NS_DIR = ./bin
+LOCAL_NS_TARGET = $(BIN_LOCAL_NS_DIR)/net_snoop
 
-SRCS = $(wildcard $(SRC_DIR)/*.c)
+SRCS = $(wildcard $(SRC_LOCAL_NS_DIR)/*.c)
 
-OBJS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS))
+OBJS = $(patsubst $(SRC_LOCAL_NS_DIR)/%.c, $(OBJ_LOCAL_NS_DIR)/%.o, $(SRCS))
 
-all: $(OBJ_DIR) $(BIN_DIR) $(TARGET)
+all: $(OBJ_LOCAL_NS_DIR) $(BIN_LOCAL_NS_DIR) $(LOCAL_NS_TARGET)
 
-$(BIN_DIR):
-	mkdir $(BIN_DIR)
+$(BIN_LOCAL_NS_DIR):
+	mkdir $(BIN_LOCAL_NS_DIR)
 
-$(OBJ_DIR):
-	mkdir $(OBJ_DIR)
+$(OBJ_LOCAL_NS_DIR):
+	mkdir $(OBJ_LOCAL_NS_DIR)
 
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
+$(OBJ_LOCAL_NS_DIR)/%.o: $(SRC_LOCAL_NS_DIR)/%.c
+	$(CC) $(LOCAL_FLAGS) -c $< -o $@
 
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $^ -o $@
+$(LOCAL_NS_TARGET): $(OBJS)
+	$(CC) $(LOCAL_FLAGS) $^ -o $@
 
-run: $(TARGET)
-	./$(TARGET)
+run: $(LOCAL_NS_TARGET)
+	./$(LOCAL_NS_TARGET)
 
-clear:
-	rm -f $(OBJ_DIR)/*.o
-	rm -rf $(BIN_DIR)/*
+clean:
+	rm -f $(OBJ_LOCAL_NS_DIR)/*.o
+	rm -rf $(BIN_LOCAL_NS_DIR)/*
 
 help:
 	@echo "Available targets:"
 	@echo "  all        	: Compile the project"
-	@echo "  clear      	: Remove object files and executable"
+	@echo "  clean      	: Remove object files and executable"
