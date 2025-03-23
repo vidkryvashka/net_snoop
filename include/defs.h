@@ -7,7 +7,7 @@
 #define DEFAULT_MAX_HOPS    32
 #define INTERFACE_LENGTH    16
 
-#define MY_NI_MAXHOST 1025  // like in <netdb.h>
+#define MY_NI_MAXHOST 1025  // like NI_MAXHOST in <netdb.h>
 
 typedef struct {
     char target_fqdn[MY_NI_MAXHOST];

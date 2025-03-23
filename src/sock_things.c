@@ -103,7 +103,7 @@ static int print_node(
 
     printf("%d\t%s\t%s\t%.3f ms%s",
         msg_sent, ip_addr, reverse_hostname, time_taken_ms,
-        (rx_icmp_hdr->type == 3) ? "\ticmp resp 3: port unreachable" : ""
+        (rx_icmp_hdr->type == 3) ? "\ticmp resp 3: port unreachable, recvfrom з глузду з\'їхав" : ""
     );
     if (rx_icmp_hdr->type == 11 || rx_icmp_hdr->type == 3) {
         printf("\n");
@@ -163,15 +163,16 @@ static int send_receive(
     }
 
     struct sockaddr_in rx_addr;
-    uint8_t rx_addr_len = sizeof(rx_addr);
-    char rx_buff[128];
+    socklen_t rx_addr_len = sizeof(rx_addr);
+    bzero(&rx_addr, rx_addr_len);
+    char rx_buff[256];
     ssize_t err_recvfrom = recvfrom(
         sockfd,
         rx_buff,
         sizeof(rx_buff),
         0,
         (struct sockaddr *)&rx_addr,
-        (socklen_t *)&rx_addr_len
+        &rx_addr_len
     );
     t = clock() - t;
     float time_taken_ms = (float)t*1000 / (float)CLOCKS_PER_SEC;
@@ -238,11 +239,10 @@ int organize(const config_t *conf) {
 
     reverse_dns_lookup(target_ip_addr, reverse_hostname);
 
-    printf("Target hostname: %s, ip: %s, max-hops %d%s %s v %s\n",
+    printf("Target hostname: %s, ip: %s, max-hops %d %s %s\n",
             conf->target_fqdn, target_ip_addr, conf->max_hops,
             (conf->interface[0]) ? ", interface" : "",
-            (conf->interface[0]) ? conf->interface : "",
-            VERSION
+            (conf->interface[0]) ? conf->interface : ""
         );
 
 
