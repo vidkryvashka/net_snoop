@@ -23,6 +23,7 @@
 #define RECV_TIMEOUT 3      // timeout for receiving packets (in seconds)
 
 
+
 struct packet_t {
     struct icmphdr icmp_hdr;
     char msg[TX_PACKET_SIZE - sizeof(struct icmphdr)];
@@ -56,7 +57,7 @@ static int reverse_dns_lookup(const char *target_ip_addr, char *dest) {
         strcpy(dest, "-\t");
         return 0;
     }
-    strcpy(dest, buff);
+    strncpy(dest, buff, MY_NI_MAXHOST);
     return 1;
 }
 
@@ -129,7 +130,7 @@ static int process_resp(char *rx_buff, int msg_sent, float time_taken_ms) {
                 return 11;
             break;
 	    case 8:
-            printf("Error: responce icmp type 8 loopback, switch interface\n");
+            printf("responce icmp type 8 loopback\n");
             break;
         default:
             printf("Error: responce icmp type %d\n", rx_icmp_hdr->type);
@@ -241,7 +242,7 @@ int organize(const config_t *conf) {
 
     printf("Target hostname: %s, ip: %s, max-hops %d %s %s\n",
             conf->target_fqdn, target_ip_addr, conf->max_hops,
-            (conf->interface[0]) ? ", interface" : "",
+            (conf->interface[0]) ? " interface" : "",
             (conf->interface[0]) ? conf->interface : ""
         );
 
@@ -253,6 +254,8 @@ int organize(const config_t *conf) {
     }
 
     fist_network(sockfd, &addr_con, reverse_hostname, target_ip_addr, conf);
+
+    close(sockfd);
 
     return 1;
 }
