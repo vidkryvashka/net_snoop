@@ -73,7 +73,7 @@ choose_again:
     }
 
     freeifaddrs(addrs);
-    return 1;
+    return 1;   // good
 }
 
 

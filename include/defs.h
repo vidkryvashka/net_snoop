@@ -1,12 +1,13 @@
-#include <stdint.h>
+#define VERSION "0.0.2"
 
-#define MY_NI_MAXHOST   1025    // NI_MAXHOST from <netdb.h>, errorlesly glows in vs code
-#define MY_NI_NAMEREQD  8       // NI_NAMEREQD from <netdb.h>, too
+#include <stdint.h>
 
 
 #define DEFAULT_FQDN        "rhodesia.me.uk"
 #define DEFAULT_MAX_HOPS    32
 #define INTERFACE_LENGTH    16
+
+#define MY_NI_MAXHOST 1025  // like in <netdb.h>
 
 typedef struct {
     char target_fqdn[MY_NI_MAXHOST];
@@ -15,7 +16,13 @@ typedef struct {
 } config_t;
 
 
-int choose_options(int argc, char** argv, config_t *conf);
+/**
+ * @brief parse arguments, assembly of conf
+ * 
+ * @param conf to fill
+ * @return int 
+ */
+int choose_options(int argc, char* argv[], config_t *conf);
 
 /**
  * @brief organizes sock knocking

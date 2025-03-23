@@ -13,17 +13,14 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <time.h>
-// #include <sys/time.h>    // idk why, without it struct timeval glows red in vs code (inclomplete type) but works
 #include <linux/if_packet.h>
-// #include <signal.h>  // for capturing ^C
+#include <errno.h>
 
 #include "defs.h"
 
-#define CUSTOM_MAX_HOP 32
-
-#define PORT_NUM 80
+#define PORT_NUM 0
 #define TX_PACKET_SIZE 64
-#define RECV_TIMEOUT 1          // timeout for receiving packets (in seconds)
+#define RECV_TIMEOUT 3      // timeout for receiving packets (in seconds)
 
 
 struct packet_t {
@@ -55,7 +52,7 @@ static int reverse_dns_lookup(const char *target_ip_addr, char *dest) {
     temp_addr.sin_family = AF_INET;
     temp_addr.sin_addr.s_addr = inet_addr(target_ip_addr);
 
-    if (getnameinfo((struct sockaddr *)&temp_addr, sizeof(struct sockaddr_in), buff, sizeof(buff), NULL, 0, MY_NI_NAMEREQD)) {
+    if (getnameinfo((struct sockaddr *)&temp_addr, sizeof(struct sockaddr_in), buff, sizeof(buff), NULL, 0, NI_NAMEREQD)) {
         strcpy(dest, "-\t");
         return 0;
     }
@@ -91,33 +88,47 @@ static void prepare_tx_pkt(struct packet_t *tx_pkt, int msg_sent) {
 }
 
 
+static int print_node(
+        int msg_sent,
+        char *reverse_hostname,
+        struct iphdr *rx_ip_hdr,
+        struct icmphdr *rx_icmp_hdr,
+        float time_taken_ms
+    ) {
+    
+    char ip_addr[16];
+    unsigned char *ip = (unsigned char *)&rx_ip_hdr->saddr;
+    snprintf(ip_addr, 16, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+    reverse_dns_lookup(ip_addr, reverse_hostname);
+
+    printf("%d\t%s\t%s\t%.3f ms%s",
+        msg_sent, ip_addr, reverse_hostname, time_taken_ms,
+        (rx_icmp_hdr->type == 3) ? "\ticmp resp 3: port unreachable" : ""
+    );
+    if (rx_icmp_hdr->type == 11 || rx_icmp_hdr->type == 3) {
+        printf("\n");
+        return 11;
+    } else
+        printf("\treached\n");
+    return 1;
+}
+
+
 static int process_resp(char *rx_buff, int msg_sent, float time_taken_ms) {
 
-    struct iphdr *ip_hdr = (struct iphdr *)rx_buff;
-    struct icmphdr *rx_icmp_hdr = (struct icmphdr *)(rx_buff + ip_hdr->ihl * 4);
-    char ip_addr[16];
+    struct iphdr *rx_ip_hdr = (struct iphdr *)rx_buff;
+    struct icmphdr *rx_icmp_hdr = (struct icmphdr *)(rx_buff + rx_ip_hdr->ihl * 4);
     char reverse_hostname[MY_NI_MAXHOST+1];
-    unsigned char *ip = (unsigned char *)&ip_hdr->saddr;
+    
     
     switch (rx_icmp_hdr->type) {
         case 0:
+        case 3:
         case 11:
-            printf("%d\t", msg_sent);
-            snprintf(ip_addr, 16, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-            reverse_dns_lookup(ip_addr, reverse_hostname);
-            printf("%s\t%s\t%.3f ms",
-                ip_addr, reverse_hostname, time_taken_ms);
-
-            if (rx_icmp_hdr->type == 11) {
-                printf("\n");
+            if (print_node(msg_sent, reverse_hostname, rx_ip_hdr, rx_icmp_hdr, time_taken_ms) == 11)
                 return 11;
-            } else
-                printf("\treached\n");
             break;
-	case 3:
-	    printf("Error: responce icmp type 3, port unreachable\n");
-	    break;
-	case 8:
+	    case 8:
             printf("Error: responce icmp type 8 loopback, switch interface\n");
             break;
         default:
@@ -163,11 +174,14 @@ static int send_receive(
         (socklen_t *)&rx_addr_len
     );
     t = clock() - t;
-    float time_taken_ms = (float)t*1000 / CLOCKS_PER_SEC;
+    float time_taken_ms = (float)t*1000 / (float)CLOCKS_PER_SEC;
     if (err_recvfrom <= 0) {
-        printf("%d\t* * *\trecvfrom = %ld\tnode refused to echo\n", msg_sent, err_recvfrom);
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            printf("%d\t* * *\trecvfrom timeout\n", msg_sent);
+        else
+            printf("%d\t* * *\trecvfrom failed: %s\n", msg_sent, strerror(errno));
         return 11;
-    } else if (process_resp(rx_buff, msg_sent, time_taken_ms) == 11 && msg_sent < conf->max_hops)
+    } else if (process_resp(rx_buff, msg_sent, time_taken_ms) == 11)
         return 11;
     return 1;   // good
 }
@@ -192,7 +206,10 @@ static void fist_network(
     int msg_sent = 0, ttl_binded = 0;
     
 move_deeper:
-    ++ msg_sent;
+    if (++ msg_sent > conf->max_hops) {
+        printf("Out of hops\n");
+        return;
+    }
     ttl_binded = msg_sent;
     if (setsockopt(sockfd, SOL_IP, IP_TTL, &ttl_binded, sizeof(ttl_binded))) {
         printf("Error: setting socket options to TTL failed\n");
@@ -201,7 +218,7 @@ move_deeper:
     if (send_receive(sockfd, target_addr, msg_sent, conf) == 11)
         goto move_deeper;
 
-}   // static void fist_network
+}
 
 
 
@@ -221,10 +238,11 @@ int organize(const config_t *conf) {
 
     reverse_dns_lookup(target_ip_addr, reverse_hostname);
 
-    printf("Target hostname: %s, ip: %s, max-hops %d%s %s\n",
+    printf("Target hostname: %s, ip: %s, max-hops %d%s %s v %s\n",
             conf->target_fqdn, target_ip_addr, conf->max_hops,
             (conf->interface[0]) ? ", interface" : "",
-            (conf->interface[0]) ? conf->interface : ""
+            (conf->interface[0]) ? conf->interface : "",
+            VERSION
         );
 
 
